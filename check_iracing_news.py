@@ -60,11 +60,16 @@ def send_to_discord(item):
     }
 
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        WEBHOOK_URL,
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+req = urllib.request.Request(
+    WEBHOOK_URL,
+    data=data,
+    headers={
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+    },
+    method="POST",
+)
     )
 
     with urllib.request.urlopen(req, timeout=30) as response:
