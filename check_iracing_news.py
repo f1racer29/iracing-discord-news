@@ -2,11 +2,12 @@ import json
 import os
 import sys
 import urllib.request
+import urllib.error
 import xml.etree.ElementTree as ET
 
 FEED_URL = "https://www.iracing.com/category/blog/feed/"
 STATE_FILE = "last_posted.txt"
-WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
+WEBHOOK_URL = (os.environ.get("DISCORD_WEBHOOK") or "").strip()
 
 if not WEBHOOK_URL:
     print("DISCORD_WEBHOOK secret fehlt.")
@@ -55,28 +56,47 @@ def write_last_posted(guid):
         f.write(guid)
 
 def send_to_discord(item):
+    webhook_url = WEBHOOK_URL + "?wait=true"
+
+    content = f"🏁 **Neue iRacing-News**\n**{item['title']}**\n{item['link']}"
+
     payload = {
-        "content": f"🏁 **Neue iRacing-News**\n**{item['title']}**\n{item['link']}"
+        "content": content[:1900],
+        "allowed_mentions": {"parse": []}
     }
 
     data = json.dumps(payload).encode("utf-8")
-req = urllib.request.Request(
-    WEBHOOK_URL,
-    data=data,
-    headers={
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json",
-    },
-    method="POST",
-)
+
+    req = urllib.request.Request(
+        webhook_url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        },
+        method="POST",
     )
 
-    with urllib.request.urlopen(req, timeout=30) as response:
-        print("Discord Status:", response.status)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            print("Discord Status:", response.status)
+            print("Discord Body:", body)
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        print("Discord HTTP Error:", e.code)
+        print("Discord Error Body:", error_body)
+        raise
 
 def main():
+    print("Webhook starts with:", WEBHOOK_URL[:35])
+    print("Webhook length:", len(WEBHOOK_URL))
+
     item = get_latest_item()
+    print("Gefundene News:", item["title"])
+    print("Link:", item["link"])
+
     last_posted = read_last_posted()
 
     if item["guid"] == last_posted:
