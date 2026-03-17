@@ -1,0 +1,86 @@
+import json
+import os
+import sys
+import urllib.request
+import xml.etree.ElementTree as ET
+
+FEED_URL = "https://www.iracing.com/category/blog/feed/"
+STATE_FILE = "last_posted.txt"
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
+
+if not WEBHOOK_URL:
+    print("DISCORD_WEBHOOK secret fehlt.")
+    sys.exit(1)
+
+def fetch_url(url):
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return response.read()
+
+def get_latest_item():
+    data = fetch_url(FEED_URL)
+    root = ET.fromstring(data)
+
+    channel = root.find("channel")
+    if channel is None:
+        raise RuntimeError("RSS-Feed konnte nicht gelesen werden: channel fehlt")
+
+    item = channel.find("item")
+    if item is None:
+        raise RuntimeError("RSS-Feed enthält keine Einträge")
+
+    title = item.findtext("title", default="Ohne Titel").strip()
+    link = item.findtext("link", default="").strip()
+    pub_date = item.findtext("pubDate", default="").strip()
+    guid = item.findtext("guid", default=link).strip()
+
+    return {
+        "title": title,
+        "link": link,
+        "pub_date": pub_date,
+        "guid": guid,
+    }
+
+def read_last_posted():
+    if not os.path.exists(STATE_FILE):
+        return None
+    with open(STATE_FILE, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+def write_last_posted(guid):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        f.write(guid)
+
+def send_to_discord(item):
+    payload = {
+        "content": f"🏁 **Neue iRacing-News**\n**{item['title']}**\n{item['link']}"
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        WEBHOOK_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req, timeout=30) as response:
+        print("Discord Status:", response.status)
+
+def main():
+    item = get_latest_item()
+    last_posted = read_last_posted()
+
+    if item["guid"] == last_posted:
+        print("Keine neue News gefunden.")
+        return
+
+    send_to_discord(item)
+    write_last_posted(item["guid"])
+    print("Neue News gepostet:", item["title"])
+
+if __name__ == "__main__":
+    main()
